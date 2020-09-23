@@ -1,0 +1,2 @@
+# multmed_gcomp
+Functions applying g-computation to estimate total effects for time-varying exposures given exposure-induced mediator-outcome confounding. Given a dataset wide on repeated observations of exposure, any number of mediators, and outcome, uses g-computation to estimate 2-way effect decomposition (NDE, NIE via each mediator) or 3-way effect decomposition (CDE, PAI via each mediator, PIE via each mediator).
