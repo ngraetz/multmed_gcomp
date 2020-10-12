@@ -905,26 +905,28 @@ multmed_effect_plot <- function(effect_table, clean_names) {
   ATE <- effect_table[effect=='ATE',mean]
   gg <- ggplot(data=effect_table[effect_type!='ATE' & !is.na(effect_clean),]) + 
     geom_hline(yintercept=0,color='black') +
-    geom_errorbar(aes(x=effect_clean,
-                      ymin=lower,
-                      ymax=upper,
+    geom_segment(aes(x=effect_clean,
+                     xend=effect_clean,
+                     y=lower,
+                     yend=upper,
                       color=effect_type),
-                  size=2) +
+                  size=2, color='black') +
     geom_point(aes(x=effect_clean,
                    y=mean,
                    fill=effect_type),
                shape=21,
-               size=8) +
+               size=8, stroke=1.5) +
     labs(y=paste0('Decomposed effect estimate'),x='',fill='Effect\ntype') +
     guides(color=F) + 
     coord_flip() +
+    scale_fill_viridis_d() + 
     theme_minimal() +
     theme(strip.text.x = element_text(size = 12),
-          axis.title.y = element_text(size = 15, margin = margin(r=10)),
-          axis.title.x = element_text(size = 15, margin = margin(t=10)),
-          axis.text = element_text(size = 15),
-          legend.title = element_text(size = 15),
-          legend.text = element_text(size = 15))
+          axis.title.y = element_text(size = 12, margin = margin(r=10)),
+          axis.title.x = element_text(size = 12, margin = margin(t=10)),
+          axis.text = element_text(size = 12),
+          legend.title = element_text(size = 12),
+          legend.text = element_text(size = 12))
   message(paste0('% Explained by mediators: ', 100-round(effect_table[effect=='CDE',mean/ATE*100])))
   return(gg)
 }
