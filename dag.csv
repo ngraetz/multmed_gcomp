@@ -1,0 +1,6 @@
+age,family,tc_vars,tv_vars,update_vars
+1,gaussian,"g1_white,g1_male","g1_age,g1_agesq",g1_house_value_percentile
+1,svyolr,"g1_white,g2_male","g2_age,g2_agesq,g1_house_value_percentile*g1_white",g2_edu_cat
+1,gaussian,"g1_white,g2_male","g2_age,g2_agesq,g1_house_value_percentile*g1_white,g2_edu_cat*g1_white",g2_house_value_percentile
+1,svyolr,"g1_white,g3_male","g3_age,g3_agesq,g1_house_value_percentile*g1_white,g2_edu_cat*g1_white,g2_house_value_percentile*g1_white",g3_edu_cat
+1,gaussian,"g1_white,g3_male","g3_age,g3_agesq,g1_house_value_percentile*g1_white,g2_edu_cat*g1_white,g2_house_value_percentile*g1_white,g3_edu_cat*g1_white",g3_house_value_percentile
