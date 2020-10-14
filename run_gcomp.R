@@ -141,7 +141,7 @@ clean_names <- data.table(effect=c("CDE",
                                          "G1 House value percentile (PAI)","G2 Edu attainment (PAI)","G2 House value percentile (PAI)","G3 Edu attainment (PAI)",
                                          "G1 House value percentile (PIE)","G2 Edu attainment (PIE)","G2 House value percentile (PIE)","G3 Edu attainment (PIE)"))
 ## Effect plot
-png(paste0(in_dir,'/multmed_figure.png'),height=11,width=11, units='in',res=600)
+png(paste0(in_dir,'/',Sys.Date(),'multmed_figure.png'),height=11,width=11, units='in',res=600)
 multmed_effect_plot(effect_table=effect_table,
                     clean_names=clean_names)
 dev.off()

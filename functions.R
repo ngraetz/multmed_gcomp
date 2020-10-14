@@ -1,4 +1,5 @@
 multmed_glms <- function(path_cb, df_wide, df_long=NULL) {
+  df_wide <- as.data.table(df_wide)
   ## Check if imputed list. If not, make list for everything else below.
   if(!('list' %in% class(df_wide))) df_wide <- list(list(df_wide))
   ## Make formulas and set up model families.
