@@ -1,0 +1,4 @@
+age,family,tc_vars,tv_vars,update_vars
+1,gaussian,A,C1+C2,L
+1,quasibinomial,A,L+C1+C2,M
+1,gaussian,A,L+M+A*M+C1+C2,Y

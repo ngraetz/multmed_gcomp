@@ -75,7 +75,7 @@ multmed_glms <- function(path_cb, df, ordinal_vars = NULL) {
   for(i in 1:length(families)) all_models[[i]]$family$family <- names(families[i])
   names(all_models) <- unlist(lapply(formulas, function(x) all.vars(x)[1]))
   ## Return a pooled survey design object 
-  ff.design.pooled <- svydesign(id=~id, weights=as.formula(paste0('~pweight_',t)), data=all_gens)
+  ff.design.pooled <- svydesign(id=~id, weights=as.formula(paste0('~pweight_',t)), data=df)
   ## Return variable lists
   tc_vars <- unique(unlist(lapply(path_cb[, tc_vars], function(x) unlist(strsplit(x,',')))))
   tc_vars <- unique(unlist(strsplit(tc_vars,'[*]')))
@@ -100,7 +100,7 @@ gfit.init.survey.imputed <- function(formulas, families, survey_design, data=NUL
   }
   lapply(1:length(formulas), function(i){
     ## Fit model function call (svyglm) over imputation list
-    if(names(families[i]) %in% c('gaussian','quasibinomial')) {
+    if(names(families[i]) %in% c('gaussian','quasibinomial','poisson')) {
       if(imputed) {
         model_list <- with(survey_design, svyglm(formula=formulas[[i]],
                                                  family=families[[i]],
@@ -206,7 +206,7 @@ multmed_gformula <- function(repo,
       clusterEvalQ(cluster, library(MASS))
       clusterEvalQ(cluster, library(miceadds))
       clusterEvalQ(cluster, library(mitools))
-      clusterEvalQ(cluster, source(paste0(repo,"/functions.R")))
+      clusterEvalQ(cluster, source(paste0(repo,"/functions_Feb2020.R")))
       ## Distribute g-formula jobs
       clusterApplyLB(cluster, 1:total_sim_count, run_gformula_bw_cluster,
                      data=data,
@@ -263,9 +263,13 @@ run_gformula_bw_cluster <- function(b, data, outcome_vars=NULL, tc_vars, models,
   message(paste0('\nSample ', b))
   batch <- round(b/250)
   dir.create(sim_dir)
-  # Do not double-count special rules variables in the "effect_paths", even though we use this to decompose total effects.
+  ## Do not double-count special rules variables in the "effect_paths", even though we use this to decompose total effects.
   update_vars <- path_cb[, update_vars]
   binary_cols <- paste0(binary_cols,'1')
+  ## If using non-parametric bootstrap, do that now and refit models.
+  # if(use_np_boot) {
+  #   
+  # }
   # Multiply dataset X times to reduce MC error from individual-level prediction.
   # Update "id" variable to be "id+mc" to avoid lagging incorrectly within "id" in functions below.
   # Order by id, age.
@@ -376,6 +380,8 @@ run_gformula_bw_cluster <- function(b, data, outcome_vars=NULL, tc_vars, models,
                                      natural_vars=med_other_vars, intervention_var=med_eff_vars,
                                      reference_vars=ref_vars))
           course[, sim := b]
+          factor_vars <- names(course)[grep('factor|character', sapply(course, class))]
+          collapse_vars <- names(course)[!(names(course) %in% c('id','age','actual_age','pweight',factor_vars))]
           course_agg <- course[, lapply(.SD, mean), .SDcols=collapse_vars, by='sim']
           course_agg[, name := paste0('y',i)]
           dir.create(paste0(sim_dir, '/',n,'/effects'),showWarnings=F)
@@ -425,6 +431,8 @@ run_gformula_bw_cluster <- function(b, data, outcome_vars=NULL, tc_vars, models,
                                        natural_vars=med_other_vars, intervention_var=med_eff_vars,
                                        reference_vars=ref_vars))
             course[, sim := b]
+            factor_vars <- names(course)[grep('factor|character', sapply(course, class))]
+            collapse_vars <- names(course)[!(names(course) %in% c('id','age','actual_age','pweight',factor_vars))]
             course_agg <- course[, lapply(.SD, mean), .SDcols=collapse_vars, by='sim']
             course_agg[, name := path]
             dir.create(paste0(sim_dir, '/',n,'/effects'),showWarnings=F)
@@ -449,6 +457,8 @@ run_gformula_bw_cluster <- function(b, data, outcome_vars=NULL, tc_vars, models,
                                      natural_vars=these_natural_vars, intervention_var=these_intervention_vars,
                                      reference_vars=NULL))
           course[, sim := b]
+          factor_vars <- names(course)[grep('factor|character', sapply(course, class))]
+          collapse_vars <- names(course)[!(names(course) %in% c('id','age','actual_age','pweight',factor_vars))]
           course_agg <- course[, lapply(.SD, mean), .SDcols=collapse_vars, by='sim']
           course_agg[, name := path]
           dir.create(paste0(sim_dir, '/',n,'/effects'),showWarnings=F)
@@ -484,7 +494,7 @@ gformula_sim <- function(this_mc,
                          ordinal_vars=NULL,
                          ordinal_levels=NULL,
                          ordinal_refs=NULL,
-                         interaction_vars='white',
+                         interaction_vars=NULL,
                          intervention_rules=NULL,
                          special_rules=NULL, 
                          special_vars=NULL,
@@ -645,6 +655,7 @@ effect_rules_fast <- function(d, step_natural_vars, step_intervention_var, natur
   }  
   ## Replace any reference variables with 0s (though could be any fixed value at which the CDE is evaluated).
   for(v in reference_vars) {
+    message(v)
     ## If normal/binomial.
     if(!(v %in% ordinal_vars)) {
       d[, (v) := 0]
@@ -654,6 +665,7 @@ effect_rules_fast <- function(d, step_natural_vars, step_intervention_var, natur
       ## Grab reference for this variable, create dummy=1, and set all other dummies=0.
       ordinal_ref <- ordinal_refs[[v]]
       for(level in ordinal_levels[[v]][ordinal_levels[[v]]!=ordinal_ref]) d[, (paste0(v,level)) := 0]
+      d[, (paste0(v,ordinal_ref)) := 1]
     }
   }
   return(d)
@@ -678,6 +690,14 @@ simPredict_fast <- function(s, v, DF, models, betas){
     # sim <- as.integer(rbinom(nrow(newDF), 1, predicted_probs))
     # DF[, (v) := predicted_probs]
     DF[, (v) := as.integer(rbinom(nrow(newDF), 1, predicted_probs))]
+  }
+  if(model_$family$family == 'poisson') {
+    newDF <- copy(DF)
+    beta_names <- names(betas_)
+    newDF <- newDF[, beta_names, with=F]
+    setcolorder(newDF, beta_names)
+    sim <- exp(as.numeric(betas_ %*% t(as.matrix(newDF))))
+    DF[, (v) := sim]
   }
   if(model_$family$family == 'gaussian') {
     # newDF <- as.data.table(DF[age==max(age), ])
@@ -738,9 +758,9 @@ rMultinom <- function(probs, m) {
 }
 
 update_dummy_interaction <- function(d, dummy_vars, interaction_vars, path_cb, ordinal_levels, tc_vars) {
-  #for(v in dummy_vars) {
+  # for(v in dummy_vars) {
   #  for(val in ordinal_levels[[v]]) d[, (paste0(v,val)) := ifelse(get(v)==val, 1, 0)]
-  #}
+  # }
   ## Infer all necessary interactions based on model coefficient names.
   get_coef_names <- function(m) {
     c <- names(coef(m))
