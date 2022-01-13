@@ -5,8 +5,8 @@ multmed_glms <- function(path_cb, df, ordinal_vars = NULL) {
   if(!('list' %in% class(df_wide))) df_wide <- list(list(df_wide))
   ## Make formulas and set up model families.
   make_formula <- function(v) {
-    f <- paste0(v,' ~ ',paste0(path_cb[update_vars==v, gsub(',','+',tc_vars)],'+',
-                               path_cb[update_vars==v, gsub(',','+',tv_vars)]))
+    f <- paste0(v,' ~ ',paste0(path_cb[update_vars==v, gsub(',','+',(tc_vars))],'+',
+                               path_cb[update_vars==v, gsub(',','+',(tv_vars))]))
     as.formula(f)
   }
   formulas <- lapply(unique(path_cb[, update_vars]), make_formula)
@@ -75,7 +75,7 @@ multmed_glms <- function(path_cb, df, ordinal_vars = NULL) {
   for(i in 1:length(families)) all_models[[i]]$family$family <- names(families[i])
   names(all_models) <- unlist(lapply(formulas, function(x) all.vars(x)[1]))
   ## Return a pooled survey design object 
-  ff.design.pooled <- svydesign(id=~id, weights=as.formula(paste0('~pweight_',t)), data=df)
+  ff.design.pooled <- svydesign(id=~id, weights=as.formula(paste0('~pweight_',t)), data=all_gens)
   ## Return variable lists
   tc_vars <- unique(unlist(lapply(path_cb[, tc_vars], function(x) unlist(strsplit(x,',')))))
   tc_vars <- unique(unlist(strsplit(tc_vars,'[*]')))
@@ -100,7 +100,7 @@ gfit.init.survey.imputed <- function(formulas, families, survey_design, data=NUL
   }
   lapply(1:length(formulas), function(i){
     ## Fit model function call (svyglm) over imputation list
-    if(names(families[i]) %in% c('gaussian','quasibinomial','poisson')) {
+    if(names(families[i]) %in% c('gaussian','quasibinomial')) {
       if(imputed) {
         model_list <- with(survey_design, svyglm(formula=formulas[[i]],
                                                  family=families[[i]],
@@ -206,7 +206,7 @@ multmed_gformula <- function(repo,
       clusterEvalQ(cluster, library(MASS))
       clusterEvalQ(cluster, library(miceadds))
       clusterEvalQ(cluster, library(mitools))
-      clusterEvalQ(cluster, source(paste0(repo,"/functions_Feb2020.R")))
+      clusterEvalQ(cluster, source(paste0(repo,"/functions.R")))
       ## Distribute g-formula jobs
       clusterApplyLB(cluster, 1:total_sim_count, run_gformula_bw_cluster,
                      data=data,
@@ -263,13 +263,9 @@ run_gformula_bw_cluster <- function(b, data, outcome_vars=NULL, tc_vars, models,
   message(paste0('\nSample ', b))
   batch <- round(b/250)
   dir.create(sim_dir)
-  ## Do not double-count special rules variables in the "effect_paths", even though we use this to decompose total effects.
+  # Do not double-count special rules variables in the "effect_paths", even though we use this to decompose total effects.
   update_vars <- path_cb[, update_vars]
   binary_cols <- paste0(binary_cols,'1')
-  ## If using non-parametric bootstrap, do that now and refit models.
-  # if(use_np_boot) {
-  #   
-  # }
   # Multiply dataset X times to reduce MC error from individual-level prediction.
   # Update "id" variable to be "id+mc" to avoid lagging incorrectly within "id" in functions below.
   # Order by id, age.
@@ -380,8 +376,6 @@ run_gformula_bw_cluster <- function(b, data, outcome_vars=NULL, tc_vars, models,
                                      natural_vars=med_other_vars, intervention_var=med_eff_vars,
                                      reference_vars=ref_vars))
           course[, sim := b]
-          factor_vars <- names(course)[grep('factor|character', sapply(course, class))]
-          collapse_vars <- names(course)[!(names(course) %in% c('id','age','actual_age','pweight',factor_vars))]
           course_agg <- course[, lapply(.SD, mean), .SDcols=collapse_vars, by='sim']
           course_agg[, name := paste0('y',i)]
           dir.create(paste0(sim_dir, '/',n,'/effects'),showWarnings=F)
@@ -431,8 +425,6 @@ run_gformula_bw_cluster <- function(b, data, outcome_vars=NULL, tc_vars, models,
                                        natural_vars=med_other_vars, intervention_var=med_eff_vars,
                                        reference_vars=ref_vars))
             course[, sim := b]
-            factor_vars <- names(course)[grep('factor|character', sapply(course, class))]
-            collapse_vars <- names(course)[!(names(course) %in% c('id','age','actual_age','pweight',factor_vars))]
             course_agg <- course[, lapply(.SD, mean), .SDcols=collapse_vars, by='sim']
             course_agg[, name := path]
             dir.create(paste0(sim_dir, '/',n,'/effects'),showWarnings=F)
@@ -457,8 +449,6 @@ run_gformula_bw_cluster <- function(b, data, outcome_vars=NULL, tc_vars, models,
                                      natural_vars=these_natural_vars, intervention_var=these_intervention_vars,
                                      reference_vars=NULL))
           course[, sim := b]
-          factor_vars <- names(course)[grep('factor|character', sapply(course, class))]
-          collapse_vars <- names(course)[!(names(course) %in% c('id','age','actual_age','pweight',factor_vars))]
           course_agg <- course[, lapply(.SD, mean), .SDcols=collapse_vars, by='sim']
           course_agg[, name := path]
           dir.create(paste0(sim_dir, '/',n,'/effects'),showWarnings=F)
@@ -494,7 +484,7 @@ gformula_sim <- function(this_mc,
                          ordinal_vars=NULL,
                          ordinal_levels=NULL,
                          ordinal_refs=NULL,
-                         interaction_vars=NULL,
+                         interaction_vars='white',
                          intervention_rules=NULL,
                          special_rules=NULL, 
                          special_vars=NULL,
@@ -622,7 +612,7 @@ gformula_sim <- function(this_mc,
 }
 
 effect_rules_fast <- function(d, step_natural_vars, step_intervention_var, natural_DF, intervention_DF, reference_vars=NULL, ordinal_vars=NULL, ordinal_refs=NULL, ordinal_levels=NULL) {
-  #message(paste(ordinal_vars,collapse = ' '))
+  message(paste(ordinal_vars,collapse = ' '))
   ## Replace all variable values with those from the natural course. 
   if(!is.null(step_natural_vars)) {
     for(v in step_natural_vars) {
@@ -664,7 +654,6 @@ effect_rules_fast <- function(d, step_natural_vars, step_intervention_var, natur
       ## Grab reference for this variable, create dummy=1, and set all other dummies=0.
       ordinal_ref <- ordinal_refs[[v]]
       for(level in ordinal_levels[[v]][ordinal_levels[[v]]!=ordinal_ref]) d[, (paste0(v,level)) := 0]
-      d[, (paste0(v,ordinal_ref)) := 1]
     }
   }
   return(d)
@@ -689,14 +678,6 @@ simPredict_fast <- function(s, v, DF, models, betas){
     # sim <- as.integer(rbinom(nrow(newDF), 1, predicted_probs))
     # DF[, (v) := predicted_probs]
     DF[, (v) := as.integer(rbinom(nrow(newDF), 1, predicted_probs))]
-  }
-  if(model_$family$family == 'poisson') {
-    newDF <- copy(DF)
-    beta_names <- names(betas_)
-    newDF <- newDF[, beta_names, with=F]
-    setcolorder(newDF, beta_names)
-    sim <- exp(as.numeric(betas_ %*% t(as.matrix(newDF))))
-    DF[, (v) := sim]
   }
   if(model_$family$family == 'gaussian') {
     # newDF <- as.data.table(DF[age==max(age), ])
@@ -757,9 +738,9 @@ rMultinom <- function(probs, m) {
 }
 
 update_dummy_interaction <- function(d, dummy_vars, interaction_vars, path_cb, ordinal_levels, tc_vars) {
-  # for(v in dummy_vars) {
+  #for(v in dummy_vars) {
   #  for(val in ordinal_levels[[v]]) d[, (paste0(v,val)) := ifelse(get(v)==val, 1, 0)]
-  # }
+  #}
   ## Infer all necessary interactions based on model coefficient names.
   get_coef_names <- function(m) {
     c <- names(coef(m))
@@ -846,8 +827,7 @@ post_process_course <- function(course, total_sims, sim_dir, decomp_paths, decom
   }
 }
 
-multmed_decomp <- function(intervention_course, compare_course, total_sims, sim_dir, decomp_paths,
-                           decomp_type='4way', outcome_var=NULL, treatment_var=NULL, scale='add') {
+multmed_decomp <- function(intervention_course, compare_course, total_sims, sim_dir, decomp_paths, decomp_type='4way', outcome_var=NULL, treatment_var=NULL) {
   if(is.null(outcome_var)) outcome_var <- decomp_paths[[intervention_course]]$outcomes
   paths <- names(decomp_paths$treatment_course$paths)
   compare_course <- readRDS(paste0(sim_dir, '/', compare_course, '_', total_sims, '.RDS'))
@@ -858,254 +838,96 @@ multmed_decomp <- function(intervention_course, compare_course, total_sims, sim_
   setnames(int_course, outcome_var, 'int_outcome')
   int_course <- int_course[, c('sim','int_outcome')]
   effect_table <- merge(compare_course, int_course, by=c('sim'))
-  ##  Y1 and Y2 are the treated/control courses where we fix all mediators at their reference values (0 for now, but could be provided).
-  ##  Y3 is treated, target mediator at control value, all other mediators at reference values (0).
-  ##  Y4 is control, target mediator at control value, all other mediators at reference values (0).
-  ##  Y5 is treated, target mediator at treated value, all other mediators at reference values (0).
-  ##  Y6 is control, target mediator at treated value, all other mediators at reference values (0).
-  if(scale=='add') {
-    ## ATE p-values
-    effect_table[, ATE := int_outcome - compare_outcome]
-    if(effect_table[, mean(ATE)]>=0) effect_table[, ATE_pval := ifelse(ATE<0, 1, 0)]
-    if(effect_table[, mean(ATE)]<0) effect_table[, ATE_pval := ifelse(ATE>0, 1, 0)]
-    ## Merge on all expected values of Y to calculate four-way decomposition of ATE.
-    if(decomp_type=='4way') {
-      for(path in c('y1','y2',paste0('y3_',paths),paste0('y4_',paths),paste0('y5_',paths),paste0('y6_',paths))) {
-        path_course <- readRDS(paste0(sim_dir,'/', intervention_course, '_', path, '_', total_sims, '.RDS'))
-        setnames(path_course, outcome_var, path)
-        path_course <- path_course[, c('sim',path), with=F]
-        effect_table <- merge(effect_table, path_course, by=c('sim'))
-      }
-      ## CDE
-      effect_table[, CDE := y1-y2]
-      if(effect_table[, mean(CDE)]>=0) effect_table[, CDE_pval := ifelse(CDE<0, 1, 0)]
-      if(effect_table[, mean(CDE)]<0) effect_table[, CDE_pval := ifelse(CDE>0, 1, 0)]
-      ## PAI and PIE for each mediator
-      # for(path in paths) {
-      #   effect_table[, (paste0('PAI_',path)) := get(paste0('y5_',path)) - get(paste0('y6_',path)) - y1 + y2]
-      #   effect_table[, (paste0('PIE_',path)) := get(paste0('y6_',path)) - get(paste0('y4_',path))]
-      # }
-      # draw_table <- copy(effect_table)
-      ## Make p-values for each decomposition effect.
-      # for(path in paths) {
-      #   ## PAI
-      #   if(effect_table[, mean(get(paste0('PAI_',path)))]>=0) effect_table[, (paste0('PAI_',path,'_pval')) := ifelse(get(paste0('PAI_',path))<0, 1, 0)]
-      #   if(effect_table[, mean(get(paste0('PAI_',path)))]<0) effect_table[, (paste0('PAI_',path,'_pval')) := ifelse(get(paste0('PAI_',path))>0, 1, 0)]
-      #   ## PIE
-      #   if(effect_table[, mean(get(paste0('PIE_',path)))]>=0) effect_table[, (paste0('PIE_',path,'_pval')) := ifelse(get(paste0('PIE_',path))<0, 1, 0)]
-      #   if(effect_table[, mean(get(paste0('PIE_',path)))]<0) effect_table[, (paste0('PIE_',path,'_pval')) := ifelse(get(paste0('PIE_',path))>0, 1, 0)]
-      # }
-      ## For each mediator: PNDE (Y3-Y4), TNIE (Y5-Y3), PNIE (Y6-Y4)
-      for(path in paths) {
-        effect_table[, (paste0('PNDE_',path)) := get(paste0('y3_',path)) - get(paste0('y4_',path))]
-        effect_table[, (paste0('TNIE_',path)) := get(paste0('y5_',path)) - get(paste0('y3_',path))]
-        effect_table[, (paste0('PNIE_',path)) := get(paste0('y6_',path)) - get(paste0('y4_',path))]
-        effect_table[, (paste0('INTref_',path)) := get(paste0('PNDE_',path)) - CDE]
-        effect_table[, (paste0('INTmed_',path)) := get(paste0('TNIE_',path)) - get(paste0('PNIE_',path))]
-        effect_table[, (paste0('PAI_',path)) := get(paste0('INTref_',path)) + get(paste0('INTmed_',path))]
-        ## Make p-values
-        for(v in c('PNDE_','TNIE_','PNIE_','INTref_','INTmed_','PAI_')) {
-          if(effect_table[, mean(get(paste0(v,path)))]>=0) effect_table[, (paste0(v,path,'_pval')) := ifelse(get(paste0(v,path))<0, 1, 0)]
-          if(effect_table[, mean(get(paste0(v,path)))]<0) effect_table[, (paste0(v,path,'_pval')) := ifelse(get(paste0(v,path))>0, 1, 0)]
-        }
-      }
-      draw_table <- copy(effect_table)
-      ## Summarize point estimates (mean of effect estimates), 95% (quantile of effect estimates), and p-value (mean) by collapsing over rows (sims/bootstraps)
-      means <- effect_table[, lapply(.SD,mean), .SDcols=c('ATE','CDE',
-                                                          paste0('PNDE_',paths),
-                                                          paste0('TNIE_',paths),
-                                                          paste0('PNIE_',paths),
-                                                          paste0('INTref_',paths),
-                                                          paste0('INTmed_',paths),
-                                                          paste0('PAI_',paths))]
-      means <- suppressWarnings(melt(means,value.name='mean',variable.name='effect'))
-      lowers <- effect_table[, lapply(.SD,quantile,probs=0.025), .SDcols=c('ATE','CDE',
-                                                                           paste0('PNDE_',paths),
-                                                                           paste0('TNIE_',paths),
-                                                                           paste0('PNIE_',paths),
-                                                                           paste0('INTref_',paths),
-                                                                           paste0('INTmed_',paths),
-                                                                           paste0('PAI_',paths))]
-      lowers <- suppressWarnings(melt(lowers,value.name='lower',variable.name='effect'))
-      uppers <- effect_table[, lapply(.SD,quantile,probs=0.975), .SDcols=c('ATE','CDE',
-                                                                           paste0('PNDE_',paths),
-                                                                           paste0('TNIE_',paths),
-                                                                           paste0('PNIE_',paths),
-                                                                           paste0('INTref_',paths),
-                                                                           paste0('INTmed_',paths),
-                                                                           paste0('PAI_',paths))]
-      uppers <- suppressWarnings(melt(uppers,value.name='upper',variable.name='effect'))
-      pvalues <- effect_table[, lapply(.SD,mean), .SDcols=c('ATE_pval','CDE_pval',
-                                                            paste0('PNDE_',paths,'_pval'),
-                                                            paste0('TNIE_',paths,'_pval'),
-                                                            paste0('PNIE_',paths,'_pval'),
-                                                            paste0('INTref_',paths,'_pval'),
-                                                            paste0('INTmed_',paths,'_pval'),
-                                                            paste0('PAI_',paths,'_pval'))]
-      pvalue <- suppressWarnings(melt(pvalues,value.name='pvalue',variable.name='effect'))
-      pvalue[, effect := gsub('_pval','',effect)]
-      full_table <- Reduce(merge,list(means,lowers,uppers,pvalue))
+  ## ATE p-values
+  effect_table[, ATE := int_outcome - compare_outcome]
+  if(effect_table[, mean(ATE)]>=0) effect_table[, ATE_pval := ifelse(ATE<0, 1, 0)]
+  if(effect_table[, mean(ATE)]<0) effect_table[, ATE_pval := ifelse(ATE>0, 1, 0)]
+  ## Merge on all expected values of Y to calculate four-way decomposition of ATE.
+  if(decomp_type=='4way') {
+    for(path in c('y1','y2',paste0('y3_',paths),paste0('y4_',paths),paste0('y5_',paths),paste0('y6_',paths))) {
+      path_course <- readRDS(paste0(sim_dir,'/', intervention_course, '_', path, '_', total_sims, '.RDS'))
+      setnames(path_course, outcome_var, path)
+      path_course <- path_course[, c('sim',path), with=F]
+      effect_table <- merge(effect_table, path_course, by=c('sim'))
     }
-    if(decomp_type=='2way') {
-      paths <- c(treatment_var,names(decomp_paths[[intervention_course]]$paths))
-      for(path in paths) {
-        path_course <- readRDS(paste0(sim_dir,'/', intervention_course, '_', path, '_', total_sims, '.RDS'))
-        path_course[, (path) := NULL]
-        setnames(path_course, outcome_var, path)
-        path_course <- path_course[, c('sim',path), with=F]
-        effect_table <- merge(effect_table, path_course, by=c('sim'))
-        effect_table[, (paste0('NIE_',path)) := get(path) - compare_outcome]
-        if(effect_table[, mean(get(paste0('NIE_',path)))]>=0) effect_table[, (paste0('NIE_',path,'_pval')) := ifelse(get(paste0('NIE_',path))<0, 1, 0)]
-        if(effect_table[, mean(get(paste0('NIE_',path)))]<0) effect_table[, (paste0('NIE_',path,'_pval')) := ifelse(get(paste0('NIE_',path))>0, 1, 0)]
-      }
-      draw_table <- copy(effect_table)
-      means <- effect_table[, lapply(.SD,mean), .SDcols=c('ATE',paste0('NIE_',paths))]
-      means <- suppressWarnings(melt(means,value.name='mean',variable.name='effect'))
-      lowers <- effect_table[, lapply(.SD,quantile,probs=0.025), .SDcols=c('ATE',paste0('NIE_',paths))]
-      lowers <- suppressWarnings(melt(lowers,value.name='lower',variable.name='effect'))
-      uppers <- effect_table[, lapply(.SD,quantile,probs=0.975), .SDcols=c('ATE',paste0('NIE_',paths))]
-      uppers <- suppressWarnings(melt(uppers,value.name='upper',variable.name='effect'))
-      pvalues <- effect_table[, lapply(.SD,mean), .SDcols=c('ATE_pval',paste0('NIE_',paths,'_pval'))]
-      pvalue <- suppressWarnings(melt(pvalues,value.name='pvalue',variable.name='effect'))
-      pvalue[, effect := gsub('_pval','',effect)]
-      ses <- effect_table[, lapply(.SD,sd), .SDcols=c('ATE',paste0('NIE_',paths))]
-      ses <- suppressWarnings(melt(ses,value.name='se',variable.name='effect'))
-      full_table <- Reduce(merge,list(means,lowers,uppers,pvalue,ses))
-      ATE <- full_table[effect=='ATE', mean]
-      full_table[, percent_ATE := mean / ATE]
-      full_table[grepl(treatment_var,effect), effect := gsub('NIE','NDE',effect)]
+    ## CDE
+    effect_table[, CDE := y1-y2]
+    if(effect_table[, mean(CDE)]>=0) effect_table[, CDE_pval := ifelse(CDE<0, 1, 0)]
+    if(effect_table[, mean(CDE)]<0) effect_table[, CDE_pval := ifelse(CDE>0, 1, 0)]
+    ## PAI and PIE for each mediator
+    for(path in paths) {
+      effect_table[, (paste0('PAI_',path)) := get(paste0('y5_',path)) - get(paste0('y6_',path)) - y1 + y2]
+      effect_table[, (paste0('PIE_',path)) := get(paste0('y6_',path)) - get(paste0('y4_',path))]
     }
-    ## Make sure effects from decomposition add up to ATE
-    message(paste0('ATE          = ',sum(full_table[effect=='ATE',mean])))
-    message(paste0('CDE+PAI+PNIE = ',sum(full_table[grepl('CDE|PAI_|PNIE_',effect),mean])))
-    out <- list(full_table,draw_table)
+    draw_table <- copy(effect_table)
+    ## Make p-values for each decomposition effect.
+    for(path in paths) {
+      ## PAI
+      if(effect_table[, mean(get(paste0('PAI_',path)))]>=0) effect_table[, (paste0('PAI_',path,'_pval')) := ifelse(get(paste0('PAI_',path))<0, 1, 0)]
+      if(effect_table[, mean(get(paste0('PAI_',path)))]<0) effect_table[, (paste0('PAI_',path,'_pval')) := ifelse(get(paste0('PAI_',path))>0, 1, 0)]
+      ## PIE
+      if(effect_table[, mean(get(paste0('PIE_',path)))]>=0) effect_table[, (paste0('PIE_',path,'_pval')) := ifelse(get(paste0('PIE_',path))<0, 1, 0)]
+      if(effect_table[, mean(get(paste0('PIE_',path)))]<0) effect_table[, (paste0('PIE_',path,'_pval')) := ifelse(get(paste0('PIE_',path))>0, 1, 0)]
+    }
+    ## Summarize point estimates (mean of effect estimates), 95% (quantile of effect estimates), and p-value (mean) by collapsing over rows (sims/bootstraps)
+    means <- effect_table[, lapply(.SD,mean), .SDcols=c('ATE','CDE',
+                                                        paste0('PAI_',paths),
+                                                        paste0('PIE_',paths))]
+    means <- suppressWarnings(melt(means,value.name='mean',variable.name='effect'))
+    lowers <- effect_table[, lapply(.SD,quantile,probs=0.025), .SDcols=c('ATE','CDE',
+                                                                         paste0('PAI_',paths),
+                                                                         paste0('PIE_',paths))]
+    lowers <- suppressWarnings(melt(lowers,value.name='lower',variable.name='effect'))
+    uppers <- effect_table[, lapply(.SD,quantile,probs=0.975), .SDcols=c('ATE','CDE',
+                                                                         paste0('PAI_',paths),
+                                                                         paste0('PIE_',paths))]
+    uppers <- suppressWarnings(melt(uppers,value.name='upper',variable.name='effect'))
+    pvalues <- effect_table[, lapply(.SD,mean), .SDcols=c('ATE_pval','CDE_pval',
+                                                          paste0('PAI_',paths,'_pval'),
+                                                          paste0('PIE_',paths,'_pval'))]
+    pvalue <- suppressWarnings(melt(pvalues,value.name='pvalue',variable.name='effect'))
+    pvalue[, effect := gsub('_pval','',effect)]
+    full_table <- Reduce(merge,list(means,lowers,uppers,pvalue))
   }
-  if(scale=='mult') {
-    ## ATE p-values
-    effect_table[, ATE := int_outcome / compare_outcome]
-    if(effect_table[, mean(ATE)]>=0) effect_table[, ATE_pval := ifelse(ATE<0, 1, 0)]
-    if(effect_table[, mean(ATE)]<0) effect_table[, ATE_pval := ifelse(ATE>0, 1, 0)]
-    ## Merge on all expected values of Y to calculate four-way decomposition of ATE.
-    if(decomp_type=='4way') {
-      for(path in c('y1','y2',paste0('y3_',paths),paste0('y4_',paths),paste0('y5_',paths),paste0('y6_',paths))) {
-        path_course <- readRDS(paste0(sim_dir,'/', intervention_course, '_', path, '_', total_sims, '.RDS'))
-        setnames(path_course, outcome_var, path)
-        path_course <- path_course[, c('sim',path), with=F]
-        effect_table <- merge(effect_table, path_course, by=c('sim'))
-      }
-      ## CDE
-      effect_table[, CDE := y1 / y2]
-      if(effect_table[, mean(CDE)]>=0) effect_table[, CDE_pval := ifelse(CDE<0, 1, 0)]
-      if(effect_table[, mean(CDE)]<0) effect_table[, CDE_pval := ifelse(CDE>0, 1, 0)]
-      effect_table[, erCDE := (y1 - y2) / compare_outcome]
-      if(effect_table[, mean(erCDE)]>=0) effect_table[, erCDE_pval := ifelse(CDE<0, 1, 0)]
-      if(effect_table[, mean(erCDE)]<0) effect_table[, erCDE_pval := ifelse(CDE>0, 1, 0)]
-      ## PAI and PIE for each mediator
-      # for(path in paths) {
-      #   effect_table[, (paste0('PAI_',path)) := get(paste0('y5_',path)) - get(paste0('y6_',path)) - y1 + y2]
-      #   effect_table[, (paste0('PIE_',path)) := get(paste0('y6_',path)) - get(paste0('y4_',path))]
-      # }
-      # draw_table <- copy(effect_table)
-      ## Make p-values for each decomposition effect.
-      # for(path in paths) {
-      #   ## PAI
-      #   if(effect_table[, mean(get(paste0('PAI_',path)))]>=0) effect_table[, (paste0('PAI_',path,'_pval')) := ifelse(get(paste0('PAI_',path))<0, 1, 0)]
-      #   if(effect_table[, mean(get(paste0('PAI_',path)))]<0) effect_table[, (paste0('PAI_',path,'_pval')) := ifelse(get(paste0('PAI_',path))>0, 1, 0)]
-      #   ## PIE
-      #   if(effect_table[, mean(get(paste0('PIE_',path)))]>=0) effect_table[, (paste0('PIE_',path,'_pval')) := ifelse(get(paste0('PIE_',path))<0, 1, 0)]
-      #   if(effect_table[, mean(get(paste0('PIE_',path)))]<0) effect_table[, (paste0('PIE_',path,'_pval')) := ifelse(get(paste0('PIE_',path))>0, 1, 0)]
-      # }
-      ## For each mediator: PNDE (Y3-Y4), TNIE (Y5-Y3), PNIE (Y6-Y4)
-      for(path in paths) {
-        effect_table[, (paste0('PNDE_',path)) := get(paste0('y3_',path)) / get(paste0('y4_',path))]
-        effect_table[, (paste0('TNIE_',path)) := get(paste0('y5_',path)) / get(paste0('y3_',path))]
-        effect_table[, (paste0('PNIE_',path)) := get(paste0('y6_',path)) / get(paste0('y4_',path))]
-        effect_table[, (paste0('INTref_',path)) := get(paste0('PNDE_',path)) - 1 - erCDE]
-        effect_table[, (paste0('INTmed_',path)) := get(paste0('TNIE_',path)) * get(paste0('PNDE_',path)) - get(paste0('PNDE_',path)) - get(paste0('PNIE_',path)) + 1]
-        effect_table[, (paste0('PAI_',path)) := get(paste0('INTref_',path)) + get(paste0('INTmed_',path))]
-        ## Make p-values
-        for(v in c('PNDE_','TNIE_','PNIE_','INTref_','INTmed_','PAI_')) {
-          if(effect_table[, mean(get(paste0(v,path)))]>=0) effect_table[, (paste0(v,path,'_pval')) := ifelse(get(paste0(v,path))<0, 1, 0)]
-          if(effect_table[, mean(get(paste0(v,path)))]<0) effect_table[, (paste0(v,path,'_pval')) := ifelse(get(paste0(v,path))>0, 1, 0)]
-        }
-      }
-      draw_table <- copy(effect_table)
-      ## Summarize point estimates (mean of effect estimates), 95% (quantile of effect estimates), and p-value (mean) by collapsing over rows (sims/bootstraps)
-      means <- effect_table[, lapply(.SD,mean), .SDcols=c('ATE','CDE',
-                                                          paste0('PNDE_',paths),
-                                                          paste0('TNIE_',paths),
-                                                          paste0('PNIE_',paths),
-                                                          paste0('INTref_',paths),
-                                                          paste0('INTmed_',paths),
-                                                          paste0('PAI_',paths))]
-      means <- suppressWarnings(melt(means,value.name='mean',variable.name='effect'))
-      lowers <- effect_table[, lapply(.SD,quantile,probs=0.025), .SDcols=c('ATE','CDE',
-                                                                           paste0('PNDE_',paths),
-                                                                           paste0('TNIE_',paths),
-                                                                           paste0('PNIE_',paths),
-                                                                           paste0('INTref_',paths),
-                                                                           paste0('INTmed_',paths),
-                                                                           paste0('PAI_',paths))]
-      lowers <- suppressWarnings(melt(lowers,value.name='lower',variable.name='effect'))
-      uppers <- effect_table[, lapply(.SD,quantile,probs=0.975), .SDcols=c('ATE','CDE',
-                                                                           paste0('PNDE_',paths),
-                                                                           paste0('TNIE_',paths),
-                                                                           paste0('PNIE_',paths),
-                                                                           paste0('INTref_',paths),
-                                                                           paste0('INTmed_',paths),
-                                                                           paste0('PAI_',paths))]
-      uppers <- suppressWarnings(melt(uppers,value.name='upper',variable.name='effect'))
-      pvalues <- effect_table[, lapply(.SD,mean), .SDcols=c('ATE_pval','CDE_pval',
-                                                            paste0('PNDE_',paths,'_pval'),
-                                                            paste0('TNIE_',paths,'_pval'),
-                                                            paste0('PNIE_',paths,'_pval'),
-                                                            paste0('INTref_',paths,'_pval'),
-                                                            paste0('INTmed_',paths,'_pval'),
-                                                            paste0('PAI_',paths,'_pval'))]
-      pvalue <- suppressWarnings(melt(pvalues,value.name='pvalue',variable.name='effect'))
-      pvalue[, effect := gsub('_pval','',effect)]
-      full_table <- Reduce(merge,list(means,lowers,uppers,pvalue))
+  if(decomp_type=='2way') {
+    paths <- c(treatment_var,names(decomp_paths[[intervention_course]]$paths))
+    for(path in paths) {
+      path_course <- readRDS(paste0(sim_dir,'/', intervention_course, '_', path, '_', total_sims, '.RDS'))
+      path_course[, (path) := NULL]
+      setnames(path_course, outcome_var, path)
+      path_course <- path_course[, c('sim',path), with=F]
+      effect_table <- merge(effect_table, path_course, by=c('sim'))
+      effect_table[, (paste0('NIE_',path)) := get(path) - compare_outcome]
+      if(effect_table[, mean(get(paste0('NIE_',path)))]>=0) effect_table[, (paste0('NIE_',path,'_pval')) := ifelse(get(paste0('NIE_',path))<0, 1, 0)]
+      if(effect_table[, mean(get(paste0('NIE_',path)))]<0) effect_table[, (paste0('NIE_',path,'_pval')) := ifelse(get(paste0('NIE_',path))>0, 1, 0)]
     }
-    if(decomp_type=='2way') {
-      paths <- c(treatment_var,names(decomp_paths[[intervention_course]]$paths))
-      for(path in paths) {
-        path_course <- readRDS(paste0(sim_dir,'/', intervention_course, '_', path, '_', total_sims, '.RDS'))
-        path_course[, (path) := NULL]
-        setnames(path_course, outcome_var, path)
-        path_course <- path_course[, c('sim',path), with=F]
-        effect_table <- merge(effect_table, path_course, by=c('sim'))
-        effect_table[, (paste0('NIE_',path)) := get(path) - compare_outcome]
-        if(effect_table[, mean(get(paste0('NIE_',path)))]>=0) effect_table[, (paste0('NIE_',path,'_pval')) := ifelse(get(paste0('NIE_',path))<0, 1, 0)]
-        if(effect_table[, mean(get(paste0('NIE_',path)))]<0) effect_table[, (paste0('NIE_',path,'_pval')) := ifelse(get(paste0('NIE_',path))>0, 1, 0)]
-      }
-      draw_table <- copy(effect_table)
-      means <- effect_table[, lapply(.SD,mean), .SDcols=c('ATE',paste0('NIE_',paths))]
-      means <- suppressWarnings(melt(means,value.name='mean',variable.name='effect'))
-      lowers <- effect_table[, lapply(.SD,quantile,probs=0.025), .SDcols=c('ATE',paste0('NIE_',paths))]
-      lowers <- suppressWarnings(melt(lowers,value.name='lower',variable.name='effect'))
-      uppers <- effect_table[, lapply(.SD,quantile,probs=0.975), .SDcols=c('ATE',paste0('NIE_',paths))]
-      uppers <- suppressWarnings(melt(uppers,value.name='upper',variable.name='effect'))
-      pvalues <- effect_table[, lapply(.SD,mean), .SDcols=c('ATE_pval',paste0('NIE_',paths,'_pval'))]
-      pvalue <- suppressWarnings(melt(pvalues,value.name='pvalue',variable.name='effect'))
-      pvalue[, effect := gsub('_pval','',effect)]
-      ses <- effect_table[, lapply(.SD,sd), .SDcols=c('ATE',paste0('NIE_',paths))]
-      ses <- suppressWarnings(melt(ses,value.name='se',variable.name='effect'))
-      full_table <- Reduce(merge,list(means,lowers,uppers,pvalue,ses))
-      ATE <- full_table[effect=='ATE', mean]
-      full_table[, percent_ATE := mean / ATE]
-      full_table[grepl(treatment_var,effect), effect := gsub('NIE','NDE',effect)]
-    }
-    ## Make sure effects from decomposition add up to ATE
-    message(paste0('ATE          = ',sum(full_table[effect=='ATE',mean])))
-    message(paste0('CDE+PAI+PNIE = ',sum(full_table[grepl('CDE|PAI_|PNIE_',effect),mean])))
-    out <- list(full_table,draw_table)
+    draw_table <- copy(effect_table)
+    means <- effect_table[, lapply(.SD,mean), .SDcols=c('ATE',paste0('NIE_',paths))]
+    means <- suppressWarnings(melt(means,value.name='mean',variable.name='effect'))
+    lowers <- effect_table[, lapply(.SD,quantile,probs=0.025), .SDcols=c('ATE',paste0('NIE_',paths))]
+    lowers <- suppressWarnings(melt(lowers,value.name='lower',variable.name='effect'))
+    uppers <- effect_table[, lapply(.SD,quantile,probs=0.975), .SDcols=c('ATE',paste0('NIE_',paths))]
+    uppers <- suppressWarnings(melt(uppers,value.name='upper',variable.name='effect'))
+    pvalues <- effect_table[, lapply(.SD,mean), .SDcols=c('ATE_pval',paste0('NIE_',paths,'_pval'))]
+    pvalue <- suppressWarnings(melt(pvalues,value.name='pvalue',variable.name='effect'))
+    pvalue[, effect := gsub('_pval','',effect)]
+    ses <- effect_table[, lapply(.SD,sd), .SDcols=c('ATE',paste0('NIE_',paths))]
+    ses <- suppressWarnings(melt(ses,value.name='se',variable.name='effect'))
+    full_table <- Reduce(merge,list(means,lowers,uppers,pvalue,ses))
+    ATE <- full_table[effect=='ATE', mean]
+    full_table[, percent_ATE := mean / ATE]
+    full_table[grepl(treatment_var,effect), effect := gsub('NIE','NDE',effect)]
   }
+  ## Make sure effects from decomposition add up to ATE
+  message(paste0('ATE    = ',sum(full_table[effect!='ATE',mean])))
+  message(paste0('Decomp = ',sum(full_table[effect=='ATE',mean])))
+  out <- list(full_table,draw_table)
   return(out)
 }
 
 multmed_effect_plot <- function(effect_table, clean_names) {
-  for(e in c('ATE','CDE','PAI','PNIE')) effect_table[grepl(e,effect), effect_type := e]
-  effect_table[, effect_type := factor(effect_type, levels=c('CDE','PNIE','PAI'))]
+  for(e in c('ATE','CDE','PAI','PIE')) effect_table[grepl(e,effect), effect_type := e]
+  effect_table[, effect_type := factor(effect_type, levels=c('CDE','PIE','PAI'))]
   effect_table <- merge(effect_table, clean_names, by='effect', all.x=T)
   effect_table[, effect_clean := factor(effect_clean, levels=clean_names[,unique(rev(effect_clean))])]
   ATE <- effect_table[effect=='ATE',mean]

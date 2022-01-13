@@ -749,9 +749,6 @@ simPredict_fast <- function(s, v, DF, models, betas){
   return(DF)
 }
 
-#############################################################################################################################################################################
-## HELPER FUNCTIONS 
-#############################################################################################################################################################################
 rMultinom <- function(probs, m) {
   d <- dim(probs)
   n <- d[1]
@@ -820,10 +817,6 @@ update_duration_ever <- function(d, a, ordinal_vars, duration_vars, ever_vars, c
   return(d)
 }
 
-#############################################################################################################################################################################
-## POST-PROCESSING FUNCTIONS
-## Format outputs, calculate all mediation effects from simulated quantities, make plots
-#############################################################################################################################################################################
 post_process_course <- function(course, total_sims, sim_dir, decomp_paths, decomp_type='4way', treatment_var=NULL) {
   message(paste0('Processing ', course, ' course across ', total_sims, ' simulations...'))
   read_course_sim <- function(x, course) {
